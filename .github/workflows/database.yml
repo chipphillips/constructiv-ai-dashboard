@@ -1,0 +1,221 @@
+name: Database Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'supabase/**'
+      - 'scripts/**'
+      - '.github/workflows/database.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'supabase/**'
+      - 'scripts/**'
+      - '.github/workflows/database.yml'
+
+env:
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+  SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+
+jobs:
+  database-test:
+    name: Database Connection Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test database connection
+        run: npm run test-db
+        env:
+          SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+          SUPABASE_DB: ${{ secrets.SUPABASE_DB }}
+          SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+  schema-validation:
+    name: Schema Validation
+    runs-on: ubuntu-latest
+    needs: [database-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Validate database schema
+        run: |
+          supabase db diff --schema=knowledge_base
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+
+  rpc-function-test:
+    name: RPC Function Testing
+    runs-on: ubuntu-latest
+    needs: [database-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test RPC functions
+        run: |
+          node -e "
+          const { createClient } = require('@supabase/supabase-js');
+          const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+          );
+          
+          async function testRPCFunctions() {
+            console.log('Testing RPC functions...');
+            
+            // Test get_documents_with_extraction_counts
+            const { data: docs, error: docsError } = await supabase.rpc('get_documents_with_extraction_counts');
+            if (docsError) {
+              console.error('Error testing get_documents_with_extraction_counts:', docsError);
+              process.exit(1);
+            }
+            console.log('✓ get_documents_with_extraction_counts working');
+            
+            // Test get_dashboard_stats
+            const { data: stats, error: statsError } = await supabase.rpc('get_dashboard_stats');
+            if (statsError) {
+              console.error('Error testing get_dashboard_stats:', statsError);
+              process.exit(1);
+            }
+            console.log('✓ get_dashboard_stats working');
+            
+            console.log('All RPC functions tested successfully!');
+          }
+          
+          testRPCFunctions();
+          "
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+  performance-test:
+    name: Database Performance Test
+    runs-on: ubuntu-latest
+    needs: [rpc-function-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run performance tests
+        run: |
+          node -e "
+          const { createClient } = require('@supabase/supabase-js');
+          const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+          );
+          
+          async function performanceTest() {
+            console.log('Running database performance tests...');
+            
+            const startTime = Date.now();
+            const { data, error } = await supabase.rpc('get_dashboard_stats');
+            const endTime = Date.now();
+            
+            if (error) {
+              console.error('Performance test failed:', error);
+              process.exit(1);
+            }
+            
+            const responseTime = endTime - startTime;
+            console.log(`Dashboard stats response time: ${responseTime}ms`);
+            
+            if (responseTime > 1000) {
+              console.warn('Warning: Response time exceeds 1 second');
+            }
+            
+            console.log('Performance test completed successfully!');
+          }
+          
+          performanceTest();
+          "
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+  migration-test:
+    name: Migration Test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Test migrations
+        run: |
+          echo "Testing database migrations..."
+          supabase db reset --debug
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+
+  database-report:
+    name: Database Report
+    runs-on: ubuntu-latest
+    needs: [database-test, schema-validation, rpc-function-test, performance-test]
+    if: always()
+    steps:
+      - name: Generate database report
+        run: |
+          echo "Database integration test completed"
+          echo "Connection test: ${{ needs.database-test.result }}"
+          echo "Schema validation: ${{ needs.schema-validation.result }}"
+          echo "RPC function test: ${{ needs.rpc-function-test.result }}"
+          echo "Performance test: ${{ needs.performance-test.result }}"
+
+      - name: Notify on failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#database-alerts'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

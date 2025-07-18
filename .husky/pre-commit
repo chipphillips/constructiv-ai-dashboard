@@ -1,0 +1,56 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run pre-commit checks
+echo "🚀 Running pre-commit checks..."
+
+# Check if we're in a git repository
+if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+  echo "❌ Not in a git repository"
+  exit 1
+fi
+
+# Check for staged files
+if ! git diff --cached --name-only | grep -qE "\.(js|jsx|ts|tsx|json|md|css)$"; then
+  echo "ℹ️  No relevant files staged for commit"
+  exit 0
+fi
+
+# Run lint-staged
+echo "🔍 Running lint-staged..."
+npx lint-staged
+
+if [ $? -ne 0 ]; then
+  echo "❌ Linting failed. Please fix the issues before committing."
+  exit 1
+fi
+
+# Run type checking
+echo "🔧 Running TypeScript type check..."
+npm run type-check
+
+if [ $? -ne 0 ]; then
+  echo "❌ TypeScript type check failed. Please fix the issues before committing."
+  exit 1
+fi
+
+# Run tests on staged files
+echo "🧪 Running tests..."
+npm run test -- --passWithNoTests --findRelatedTests --bail
+
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed. Please fix the issues before committing."
+  exit 1
+fi
+
+# Security audit
+echo "🔒 Running security audit..."
+npm audit --audit-level=moderate
+
+if [ $? -ne 0 ]; then
+  echo "⚠️  Security vulnerabilities found. Please review and fix."
+  echo "   Run 'npm audit fix' to automatically fix issues."
+  # Don't exit here, just warn
+fi
+
+echo "✅ Pre-commit checks passed! Ready to commit."

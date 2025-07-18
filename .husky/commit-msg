@@ -1,0 +1,55 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Commit message validation
+echo "📝 Validating commit message..."
+
+# Read the commit message
+commit_message=$(cat $1)
+
+# Check if commit message follows conventional commits format
+if ! echo "$commit_message" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|security|db)(\(.+\))?: .+"; then
+  echo "❌ Invalid commit message format!"
+  echo ""
+  echo "Please use the conventional commits format:"
+  echo "  <type>(<scope>): <description>"
+  echo ""
+  echo "Types:"
+  echo "  - feat: New features"
+  echo "  - fix: Bug fixes"
+  echo "  - docs: Documentation changes"
+  echo "  - style: Code style changes (formatting, etc.)"
+  echo "  - refactor: Code refactoring"
+  echo "  - test: Adding or updating tests"
+  echo "  - chore: Maintenance tasks"
+  echo "  - perf: Performance improvements"
+  echo "  - security: Security fixes"
+  echo "  - db: Database changes"
+  echo ""
+  echo "Examples:"
+  echo "  - feat(auth): add user authentication"
+  echo "  - fix(dashboard): resolve loading state issue"
+  echo "  - docs: update API documentation"
+  echo "  - chore(deps): update dependencies"
+  echo ""
+  exit 1
+fi
+
+# Check commit message length
+if [ ${#commit_message} -gt 100 ]; then
+  echo "⚠️  Commit message is longer than 100 characters (${#commit_message} chars)"
+  echo "   Consider making it more concise."
+fi
+
+# Check for common issues
+if echo "$commit_message" | grep -qE "^(WIP|TODO|FIXME|TEMP)"; then
+  echo "⚠️  Commit message contains work-in-progress indicators"
+  echo "   Make sure this is intentional."
+fi
+
+# Check for proper capitalization
+if ! echo "$commit_message" | grep -qE "^[a-z]+\([^)]*\): [a-z]"; then
+  echo "⚠️  Commit message should start with lowercase after colon"
+fi
+
+echo "✅ Commit message validation passed!"
